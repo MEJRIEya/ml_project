@@ -4,3 +4,7 @@ __pycache__/
 .pytest_cache/
 *.bak
 *.bak2
+mlflow.db
+mlruns/
+classification_report.txt
+*.bak3

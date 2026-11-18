@@ -13,6 +13,7 @@ Exemples :
 """
 
 import argparse
+import os
 import subprocess  # nosec B404
 import sys
 
@@ -186,6 +187,7 @@ def all_flow():
     model = train_task(x_train, y_train)
     save_task(model)
     evaluate_task(model, x_test, y_test)
+    mlflow_flow()
 
 
 @task(name="Lancement de l'API (FastAPI)")
@@ -212,7 +214,98 @@ def api_flow():
     start_api()
 
 
+@task(name="Suivi MLflow")
+def track_mlflow_task():
+    import model_pipeline as mp
+
+    _, x_test, _, y_test = mp.prepare_data("Churn_Modelling.csv")
+    model = mp.load_model("classifier.joblib")
+    return mp.track_experiment(model, x_test, y_test)
+
+
+@task(name="Lancement de l'interface MLflow")
+def start_mlflow_ui():
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mlflow",
+            "ui",
+            "--backend-store-uri",
+            "sqlite:///mlflow.db",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "5000",
+        ],
+        check=False,
+    )
+
+
+@flow(name="mlflow")
+def mlflow_flow():
+    track_mlflow_task()
+
+
+@flow(name="mlflow-ui")
+def mlflow_ui_flow():
+    start_mlflow_ui()
+
+
+DOCKER_USER = os.getenv("DOCKER_USER", "votre_user_dockerhub")
+DOCKER_IMAGE = os.getenv("DOCKER_IMAGE", "prenom_nom_classe_mlops")
+CONTAINER_NAME = "churn-api"
+
+
+@task(name="Docker : build de l'image")
+def docker_build():
+    run_command(["docker", "build", "-t", DOCKER_IMAGE, "."])
+
+
+@task(name="Docker : push sur Docker Hub")
+def docker_push():
+    remote = f"{DOCKER_USER}/{DOCKER_IMAGE}:latest"
+    run_command(["docker", "tag", DOCKER_IMAGE, remote])
+    run_command(["docker", "push", remote])
+
+
+@task(name="Docker : lancement du conteneur")
+def docker_run():
+    subprocess.run(
+        ["docker", "rm", "-f", CONTAINER_NAME], check=False, capture_output=True
+    )
+    run_command(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            CONTAINER_NAME,
+            "-p",
+            "8000:8000",
+            DOCKER_IMAGE,
+        ]
+    )
+
+
+@flow(name="docker")
+def docker_flow():
+    docker_build()
+    docker_run()
+
+
+@flow(name="cd")
+def cd_flow():
+    docker_build()
+    docker_push()
+    docker_run()
+
+
 FLOWS = {
+    "docker": docker_flow,
+    "cd": cd_flow,
+    "mlflow": mlflow_flow,
+    "mlflow-ui": mlflow_ui_flow,
     "api": api_flow,
     "install": install_flow,
     "code": code_flow,

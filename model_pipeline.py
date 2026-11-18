@@ -104,3 +104,48 @@ def load_model(path="classifier.joblib"):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Modèle introuvable : {path}")
     return joblib.load(path)
+
+
+MLFLOW_TRACKING_URI = "sqlite:///mlflow.db"
+MLFLOW_EXPERIMENT = "churn_prediction"
+
+
+def setup_mlflow():
+    """Configure MLflow : base de suivi locale et nom de l'expérience."""
+    import mlflow
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(MLFLOW_EXPERIMENT)
+
+
+def track_experiment(model, x_test, y_test, run_name="random_forest"):
+    """Enregistre dans MLflow les paramètres, métriques et le modèle."""
+    import mlflow
+    import mlflow.sklearn
+    from sklearn.metrics import f1_score, precision_score, recall_score
+
+    setup_mlflow()
+    y_pred = model.predict(x_test)
+    with mlflow.start_run(run_name=run_name) as run:
+        params = model.get_params()
+        for key in ("n_estimators", "max_depth", "random_state"):
+            mlflow.log_param(key, params.get(key))
+
+        mlflow.log_metric("accuracy", accuracy_score(y_test, y_pred))
+        mlflow.log_metric("precision", precision_score(y_test, y_pred))
+        mlflow.log_metric("recall", recall_score(y_test, y_pred))
+        mlflow.log_metric("f1_score", f1_score(y_test, y_pred))
+
+        report_path = "classification_report.txt"
+        with open(report_path, "w", encoding="utf-8") as file:
+            file.write(classification_report(y_test, y_pred))
+        mlflow.log_artifact(report_path)
+
+        mlflow.sklearn.log_model(
+            model,
+            name="model",
+            input_example=x_test.head(5),
+            serialization_format="cloudpickle",
+        )
+        print(f"Run MLflow enregistré : {run.info.run_id}")
+        return run.info.run_id
