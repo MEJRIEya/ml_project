@@ -16,6 +16,8 @@ import argparse
 import subprocess  # nosec B404
 import sys
 
+from pathlib import Path
+
 from prefect import flow, task
 
 from model_pipeline import (
@@ -49,6 +51,20 @@ def run_command(cmd):
 
 
 # ------------------------------------------------------------------ TASKS
+REPO_URL = "https://github.com/MEJRIEya/ml_project.git"
+REPO_DIR = "ml_project_repo"
+
+
+@task(name="Récupération du projet (git)")
+def fetch_project():
+    if Path(".git").exists():
+        run_command(["git", "pull", "--ff-only"])
+    elif Path(REPO_DIR).exists():
+        run_command(["git", "-C", REPO_DIR, "pull", "--ff-only"])
+    else:
+        run_command(["git", "clone", REPO_URL, REPO_DIR])
+
+
 @task(name="Installer les dépendances")
 def install_dependencies():
     """Installe les paquets de requirements.txt."""
@@ -159,6 +175,7 @@ def predict_flow():
 
 @flow(name="all")
 def all_flow():
+    fetch_project()
     """Flow complet : code (format/qualité/sécurité/tests) puis préparation,
     entraînement, sauvegarde et évaluation."""
     format_code()
