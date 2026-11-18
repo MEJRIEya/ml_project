@@ -188,7 +188,32 @@ def all_flow():
     evaluate_task(model, x_test, y_test)
 
 
+@task(name="Lancement de l'API (FastAPI)")
+def start_api():
+    if not Path("classifier.joblib").exists():
+        raise FileNotFoundError("Modèle absent : lancez d'abord --flow train")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8000",
+        ],
+        check=False,
+    )
+
+
+@flow(name="api")
+def api_flow():
+    start_api()
+
+
 FLOWS = {
+    "api": api_flow,
     "install": install_flow,
     "code": code_flow,
     "train": train_flow,
